@@ -16,35 +16,53 @@
 <!-- TO BE DONE TODAY  beginning-->
 
   <!-- Workcell root -->
-  <link name="world"/>  <!-- I am dummy -->
-  <link name="tcp"/> <!-- I am also dummy -->
-  
-  <!-- Pedestal: built directly into this workcell -->
+  <link name="world"/>
+  <link name="tcp"/>
+
+  <!-- Pedestal 0.30 x 0.30 x 0.70 m, frame on the floor -->
   <link name="pedestal">
-
+    <visual>
+      <origin xyz="0 0 0.35" rpy="0 0 0"/>
+      <geometry><box size="0.30 0.30 0.70"/></geometry>
+      <material name="pedestal_grey"><color rgba="0.55 0.55 0.58 1.0"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.35" rpy="0 0 0"/>
+      <geometry><box size="0.30 0.30 0.70"/></geometry>
+    </collision>
   </link>
-  
-  
-  <!-- Spindle and custom TCP: -->
+
+  <!-- Spindle: cylinder 0.20 m long along tool0 +Z -->
   <link name="spindle">
-
+    <visual>
+      <origin xyz="0 0 0.10" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.20"/></geometry>
+      <material name="spindle_dark"><color rgba="0.2 0.2 0.25 1.0"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.10" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.20"/></geometry>
+    </collision>
   </link>
-
 
   <joint name="tool0_to_spindle" type="fixed">
-
+    <parent link="tool0"/>
+    <child link="spindle"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-
+  <!-- TCP at the tip of the spindle -->
   <joint name="spindle_to_tcp" type="fixed">
-
+    <parent link="spindle"/>
+    <child link="tcp"/>
+    <origin xyz="0 0 0.20" rpy="0 0 0"/>
   </joint>
-<!-- we do not need a joint between a pedestal and robot -->
 
   <joint name="world_to_pedestal" type="fixed">
-
+    <parent link="world"/>
+    <child link="pedestal"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
-
 
 <!-- TO BE DONE TODAY  The end -->
 
