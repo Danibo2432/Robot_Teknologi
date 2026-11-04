@@ -1,0 +1,39 @@
+# Workcell measurements for the mock UR5e model.
+# Lengths are metres; rotations are radians. Measure from the named parent frame.
+# The TCP frame is the marker contact point used by MoveIt and the drawing trace.
+
+pedestal:
+  # Origin of the pedestal base relative to world.
+  world_origin_xyz_m: [0.0, 0.0, 0.0]
+  # Robot base is 0.31 m above the paper surface (paper world z = 0.462 m).
+  robot_mount_xyz_m: [0.0, 0.0, 0.772]
+  # Pedestal box height from the world-origin base to the robot mounting plane.
+  height_m: 0.772
+  robot_mount_rpy_rad: [0.0, 0.0, 0.0]
+  # Placeholder footprint for visualization/collision; replace with measured values.
+  footprint_x_m: 0.40
+  footprint_y_m: 0.40
+
+tool_tip:
+  # Transform from UR tool0 to the spindle frame.
+  tool0_to_spindle_xyz_m: [0.0, 0.0, 0.0]
+  tool0_to_spindle_rpy_rad: [0.0, 0.0, 0.0]
+  # Transform from spindle to TCP. Set this so TCP is at the marker contact tip.
+  spindle_to_tcp_xyz_m: [0.0, 0.0, 0.0]
+  spindle_to_tcp_rpy_rad: [0.0, 0.0, 0.0]
+
+
+paper:
+  # Centre of the paper's top surface in world coordinates (metres).
+  # Aligned over the mock table centred at x=0.85 m, top surface z=0.46 m.
+  center_x_m: -0.43
+  center_y_m: -0.06
+  surface_z_m: 0.462
+  # Outside sheet dimensions; the box is shown in RViz and is a collision object.
+  size_x_m: 0.297
+  size_y_m: 0.42
+  thickness_m: 0.002
+  # Width of the converted image drawing, centred on the sheet.
+  drawing_width_m: 0.18
+  # Allowed numerical difference between target Z and the paper surface.
+  target_z_tolerance_m: 0.002

@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<robot name="mas248_ur5e" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="ur_type" default="ur5e"/>
+  <xacro:arg name="tf_prefix" default=""/>
+  <xacro:arg name="safety_limits" default="true"/>
+  <xacro:arg name="name" default="ur"/>
+
+  <!-- Humble UR description generates mock ros2_control via use_fake_hardware. -->
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+
+  <!-- Editable measured dimensions: see config/workcell_dimensions.yaml. -->
+  <xacro:property name="dimensions" value="${xacro.load_yaml('$(find mas248_ur5e_moveit_config)/config/workcell_dimensions.yaml')}"/>
+
+  <link name="world"/>
+  <link name="pedestal_link">
+    <!-- Pedestal visualization and collision dimensions are configured in YAML. -->
+    <xacro:if value="${float(dimensions['pedestal']['footprint_x_m']) > 0.0 and float(dimensions['pedestal']['footprint_y_m']) > 0.0 and float(dimensions['pedestal']['height_m']) > 0.0}">
+      <visual>
+        <origin xyz="0 0 ${float(dimensions['pedestal']['height_m']) / 2.0}" rpy="0 0 0"/>
+        <geometry><box size="${dimensions['pedestal']['footprint_x_m']} ${dimensions['pedestal']['footprint_y_m']} ${dimensions['pedestal']['height_m']}"/></geometry>
+        <material name="pedestal_material"><color rgba="0.35 0.38 0.42 1.0"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${float(dimensions['pedestal']['height_m']) / 2.0}" rpy="0 0 0"/>
+        <geometry><box size="${dimensions['pedestal']['footprint_x_m']} ${dimensions['pedestal']['footprint_y_m']} ${dimensions['pedestal']['height_m']}"/></geometry>
+      </collision>
+    </xacro:if>
+  </link>
+  <joint name="world_to_pedestal" type="fixed">
+    <parent link="world"/><child link="pedestal_link"/>
+    <origin xyz="${dimensions['pedestal']['world_origin_xyz_m'][0]} ${dimensions['pedestal']['world_origin_xyz_m'][1]} ${dimensions['pedestal']['world_origin_xyz_m'][2]}" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:ur_robot
+    name="$(arg name)"
+    tf_prefix="$(arg tf_prefix)"
+    parent="pedestal_link"
+    joint_limits_parameters_file="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
+    kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
+    physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
+    visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
+    ur_type="$(arg ur_type)"
+    use_fake_hardware="true"
+    safety_limits="$(arg safety_limits)"
+    safety_pos_margin="0.15"
+    safety_k_position="20">
+    <origin xyz="${dimensions['pedestal']['robot_mount_xyz_m'][0]} ${dimensions['pedestal']['robot_mount_xyz_m'][1]} ${dimensions['pedestal']['robot_mount_xyz_m'][2]}" rpy="${dimensions['pedestal']['robot_mount_rpy_rad'][0]} ${dimensions['pedestal']['robot_mount_rpy_rad'][1]} ${dimensions['pedestal']['robot_mount_rpy_rad'][2]}"/>
+  </xacro:ur_robot>
+
+
+  <link name="spindle"/>
+  <joint name="tool0_to_spindle" type="fixed">
+    <parent link="tool0"/><child link="spindle"/>
+    <origin xyz="${dimensions['tool_tip']['tool0_to_spindle_xyz_m'][0]} ${dimensions['tool_tip']['tool0_to_spindle_xyz_m'][1]} ${dimensions['tool_tip']['tool0_to_spindle_xyz_m'][2]}" rpy="${dimensions['tool_tip']['tool0_to_spindle_rpy_rad'][0]} ${dimensions['tool_tip']['tool0_to_spindle_rpy_rad'][1]} ${dimensions['tool_tip']['tool0_to_spindle_rpy_rad'][2]}"/>
+  </joint>
+  <link name="tcp"/>
+  <joint name="spindle_to_tcp" type="fixed">
+    <parent link="spindle"/><child link="tcp"/>
+    <origin xyz="${dimensions['tool_tip']['spindle_to_tcp_xyz_m'][0]} ${dimensions['tool_tip']['spindle_to_tcp_xyz_m'][1]} ${dimensions['tool_tip']['spindle_to_tcp_xyz_m'][2]}" rpy="${dimensions['tool_tip']['spindle_to_tcp_rpy_rad'][0]} ${dimensions['tool_tip']['spindle_to_tcp_rpy_rad'][1]} ${dimensions['tool_tip']['spindle_to_tcp_rpy_rad'][2]}"/>
+  </joint>
+
+  <!-- Paper dimensions and pose are edited in config/workcell_dimensions.yaml. -->
+  <link name="paper_sheet">
+    <visual>
+      <geometry><box size="${dimensions['paper']['size_x_m']} ${dimensions['paper']['size_y_m']} ${dimensions['paper']['thickness_m']}"/></geometry>
+      <material name="paper_material"><color rgba="0.92 0.90 0.78 1.0"/></material>
+    </visual>
+    <collision>
+      <geometry><box size="${dimensions['paper']['size_x_m']} ${dimensions['paper']['size_y_m']} ${dimensions['paper']['thickness_m']}"/></geometry>
+    </collision>
+  </link>
+  <joint name="world_to_paper_sheet" type="fixed">
+    <parent link="world"/><child link="paper_sheet"/>
+    <origin xyz="${dimensions['paper']['center_x_m']} ${dimensions['paper']['center_y_m']} ${float(dimensions['paper']['surface_z_m']) - float(dimensions['paper']['thickness_m']) / 2.0}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="table_link">
+    <visual><origin xyz="0.85 0 0.435" rpy="0 0 0"/><geometry><box size="1.20 0.80 0.05"/></geometry><material name="table"><color rgba="0.75 0.75 0.78 1.0"/></material></visual>
+    <collision><origin xyz="0.85 0 0.435" rpy="0 0 0"/><geometry><box size="1.20 0.80 0.05"/></geometry></collision>
+  </link>
+  <joint name="world_to_table" type="fixed">
+    <parent link="world"/><child link="table_link"/><origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>

@@ -1,0 +1,13 @@
+# Edit this file to set the allowed drawing area and overall speed scales.
+# Bounds are metres in the world frame; MoveIt still enforces robot reach and collisions.
+work_area:
+  frame: world
+  # Broad software bounds; actual reach and collision checks still come from MoveIt.
+  min: {x: -100.0, y: -100.0, z: -100.0}
+  max: {x:  100.0, y:  100.0, z:  100.0}
+motion:
+  # Global factors from 0.01 to 1.0, applied on top of each joint's cap.
+  velocity_scaling_factor: 0.10
+  acceleration_scaling_factor: 0.10
+  # Used only to time Cartesian paths that arrive without timestamps.
+  fallback_max_joint_speed_rad_s: 0.15
