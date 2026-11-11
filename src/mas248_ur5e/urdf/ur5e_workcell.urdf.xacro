@@ -20,7 +20,7 @@
   <link name="tcp"/>
 
   <!-- Pedestal 0.30 x 0.30 x 0.70 m, frame on the floor -->
-  <link name="pedestal">
+  <link name="pedestal_link">
     <visual>
       <origin xyz="0 0 0.35" rpy="0 0 0"/>
       <geometry><box size="0.30 0.30 0.70"/></geometry>
@@ -33,7 +33,7 @@
   </link>
 
   <!-- Spindle: cylinder 0.20 m long along tool0 +Z -->
-  <link name="spindle">
+  <link name="spindle_body">
     <visual>
       <origin xyz="0 0 0.10" rpy="0 0 0"/>
       <geometry><cylinder radius="0.035" length="0.20"/></geometry>
@@ -47,20 +47,20 @@
 
   <joint name="tool0_to_spindle" type="fixed">
     <parent link="tool0"/>
-    <child link="spindle"/>
+    <child link="spindle_body"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
   <!-- TCP at the tip of the spindle -->
   <joint name="spindle_to_tcp" type="fixed">
-    <parent link="spindle"/>
+    <parent link="spindle_body"/>
     <child link="tcp"/>
     <origin xyz="0 0 0.20" rpy="0 0 0"/>
   </joint>
 
   <joint name="world_to_pedestal" type="fixed">
     <parent link="world"/>
-    <child link="pedestal"/>
+    <child link="pedestal_link"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
@@ -71,7 +71,7 @@
     name="$(arg name)"
     ur_type="$(arg ur_type)"
     tf_prefix="$(arg tf_prefix)"
-    parent="pedestal"
+    parent="pedestal_link"
     joint_limits_parameters_file="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
     kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
     physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
