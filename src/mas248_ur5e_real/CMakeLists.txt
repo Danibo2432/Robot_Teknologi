@@ -24,7 +24,8 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/config/" DESTINATION share/${PROJ
 install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/config/" DESTINATION share/${PROJECT_NAME}/config)
 install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/urdf" "${CMAKE_CURRENT_SOURCE_DIR}/launch"
         DESTINATION share/${PROJECT_NAME})
-install(PROGRAMS scripts/validate_description.py scripts/validate_stack.py
-        scripts/run_picture_real.py scripts/preflight.py
+# validate_description.py, validate_stack.py and preflight.py were not provided;
+# their checks are done inside run_picture_real.py.
+install(PROGRAMS scripts/run_picture_real.py
         DESTINATION lib/${PROJECT_NAME})
 ament_package()
