@@ -128,6 +128,26 @@ def compute_ik(node, pose, seed, timeout=10.0):
     return [float(named[j]) for j in JOINTS]
 
 
+# ---------------------------------------------------------------- FK of a joint pose
+def compute_fk(node, joints, link='tcp', timeout=10.0):
+    """Pose of 'link' in world for the given joint angles, from MoveIt."""
+    from moveit_msgs.srv import GetPositionFK
+    cli = node.create_client(GetPositionFK, '/compute_fk')
+    if not cli.wait_for_service(timeout_sec=timeout):
+        raise RuntimeError('/compute_fk not available')
+    req = GetPositionFK.Request()
+    req.header.frame_id = 'world'
+    req.fk_link_names = [link]
+    req.robot_state.joint_state.name = list(JOINTS)
+    req.robot_state.joint_state.position = [float(v) for v in joints]
+    fut = cli.call_async(req)
+    rclpy.spin_until_future_complete(node, fut, timeout_sec=timeout)
+    res = fut.result() if fut.done() else None
+    if res is None or res.error_code.val != 1 or not res.pose_stamped:
+        raise RuntimeError('FK of the drawing pose failed')
+    return res.pose_stamped[0].pose
+
+
 # ---------------------------------------------------------------- target checks
 def target_checks(strokes, z_offset, min_z, max_radius):
     """Simple geometric sanity checks on the target file before planning."""
@@ -148,8 +168,6 @@ def main():
     ap.add_argument('--targets', default='/tmp/mas248_l10_targets_lower.json', help='target JSON')
     ap.add_argument('--lift', type=float, default=0.05, help='pen-up height above the drawing [m]')
     ap.add_argument('--home-lift', type=float, default=0.15, help='lift before planning to home [m]')
-    ap.add_argument('--tool-yaw-deg', type=float, default=-90.0,
-                    help='rotate the pen about its own axis; avoids the wrist singularity [deg]')
     ap.add_argument('--z-offset', type=float, default=0.0, help='raise all targets by this much [m]')
     ap.add_argument('--min-z', type=float, default=None,
                     help='refuse targets below this world z [m]; set it from the measured table height')
@@ -160,8 +178,13 @@ def main():
     ap.add_argument('--max-strokes', type=int, default=0, help='first N strokes only (0 = all)')
     ap.add_argument('--speed', type=float, default=0.5,
                     help='extra slow-down 0 < speed <= 1 on top of MoveIt scaling (default 0.5)')
+    ap.add_argument('--home', default='0.012,-1.572,-1.571,-1.571,1.571,-3.142',
+                    help='parking pose at start and end [rad]: pan, lift, elbow, wrist1, wrist2, wrist3')
+    ap.add_argument('--drawing-pose', default='0.422,-2.734,-1.265,-2.285,1.774,-3.142',
+                    help='taught pose above the sheet, pen down [rad]. The robot always passes '
+                         'through it on the way to and from the drawing, which fixes the arm shape.')
     ap.add_argument('--no-home', action='store_true',
-                    help='start from the current pose instead of planning to home first')
+                    help='skip the parking pose: go from the current pose straight to the drawing pose')
     ap.add_argument('--execute', action='store_true', help='move the REAL robot (instructor present)')
     ap.add_argument('--acknowledge-hardware', action='store_true',
                     help='I confirm this moves the physical UR5e')
@@ -170,6 +193,10 @@ def main():
     ap.add_argument('--no-confirm', action='store_true', help='do not ask for Enter before each segment')
     args = ap.parse_args()
 
+    home = [float(v) for v in args.home.split(',')]
+    drawing_pose = [float(v) for v in args.drawing_pose.split(',')]
+    if len(home) != 6 or len(drawing_pose) != 6:
+        ap.error('--home and --drawing-pose need six comma-separated joint angles')
     if not 0.0 < args.speed <= 1.0:
         ap.error('--speed must be in (0, 1]')
     if args.execute and not (args.acknowledge_hardware and args.acknowledge_clearance):
@@ -182,25 +209,6 @@ def main():
         strokes = strokes[:args.max_strokes]
     if not strokes:
         sys.exit('No strokes in target file')
-
-    # Rotate every target about the TCP's own Z axis (the pen axis). The pen tip and
-    # the drawing are unchanged, but the flange no longer lines up with wrist_1,
-    # which keeps the wrist away from its singularity.
-    if args.tool_yaw_deg:
-        h = math.radians(args.tool_yaw_deg) / 2.0
-        bz, bw = math.sin(h), math.cos(h)
-        for stroke in strokes:
-            for p in stroke['poses']:
-                if isinstance(p, dict):
-                    x, y, z, w = p['qx'], p['qy'], p['qz'], p['qw']
-                else:
-                    x, y, z, w = p[3], p[4], p[5], p[6]
-                q = (x * bw + y * bz, y * bw - x * bz, z * bw + w * bz, w * bw - z * bz)
-                if isinstance(p, dict):
-                    p['qx'], p['qy'], p['qz'], p['qw'] = q
-                else:
-                    p[3:7] = list(q)
-        print(f'Pen rotated {args.tool_yaw_deg:.0f} deg about its own axis (wrist singularity guard)')
 
     lowest, widest, problems = target_checks(strokes, args.z_offset, args.min_z, args.max_radius)
     print(f'Targets: {len(strokes)} strokes, lowest z = {lowest:.3f} m, widest reach = {widest:.3f} m')
@@ -228,11 +236,61 @@ def main():
         report.append((label, res.fraction, step, duration(res.solution) / args.speed))
         return res.solution
 
-    def plan_joints(target, start, label):
-        traj = move_group(node, joints=target, execute=False, planning_time=30.0,
-                          start_joint_positions=start).planned_trajectory
-        report.append((label, 1.0, max_joint_step(traj), duration(traj) / args.speed))
+    def check_valid(q):
+        from moveit_msgs.srv import GetStateValidity
+        cli = node.create_client(GetStateValidity, '/check_state_validity')
+        if not cli.wait_for_service(timeout_sec=10.0):
+            raise RuntimeError('/check_state_validity not available')
+        req = GetStateValidity.Request()
+        req.group_name = 'manipulator'
+        req.robot_state.joint_state.name = list(JOINTS)
+        req.robot_state.joint_state.position = [float(v) for v in q]
+        fut = cli.call_async(req)
+        rclpy.spin_until_future_complete(node, fut, timeout_sec=10.0)
+        return fut.done() and fut.result() is not None and fut.result().valid
+
+    def joint_line(start, goal, label, vmax=0.3, amax=0.3):
+        """Deterministic move: every joint goes straight from start to goal at the same
+        time, with a smooth (cosine) speed profile. Intermediate states are checked
+        for collisions before anything is executed. No random planner involved."""
+        from moveit_msgs.msg import RobotTrajectory
+        from trajectory_msgs.msg import JointTrajectoryPoint
+        from builtin_interfaces.msg import Duration
+        start, goal = [float(v) for v in start], [float(v) for v in goal]
+        dq = [g - s0 for s0, g in zip(start, goal)]
+        span = max(abs(v) for v in dq)
+        traj = RobotTrajectory()
+        traj.joint_trajectory.joint_names = list(JOINTS)
+        if span < 1e-4:
+            report.append((label, 1.0, 0.0, 0.0))
+            return traj
+        T = max(math.pi / 2 * span / vmax, math.pi * math.sqrt(span / (2 * amax)), 0.5)
+        n = max(10, int(math.ceil(span / 0.01)))
+        for k in range(n + 1):
+            t = T * k / n
+            s_ = (1 - math.cos(math.pi * t / T)) / 2
+            sd = math.pi / (2 * T) * math.sin(math.pi * t / T)
+            sdd = (math.pi / T) ** 2 / 2 * math.cos(math.pi * t / T)
+            q = [s0 + s_ * d for s0, d in zip(start, dq)]
+            if k % 5 == 0 or k == n:
+                if not check_valid(q):
+                    raise RuntimeError(f'{label}: the straight joint path is in collision at '
+                                       f'{100 * k // n} %. Move the robot or choose another --home.')
+            pt = JointTrajectoryPoint()
+            pt.positions = q
+            pt.velocities = [sd * d for d in dq]
+            pt.accelerations = [sdd * d for d in dq]
+            pt.time_from_start = Duration(sec=int(t), nanosec=int((t - int(t)) * 1e9))
+            traj.joint_trajectory.points.append(pt)
+        report.append((label, 1.0, max_joint_step(traj), T / args.speed))
         return traj
+
+    def current_joints():
+        js = wait_for_message(node, JointState, '/joint_states')
+        if js is None:
+            raise RuntimeError('No /joint_states received')
+        named = dict(zip(js.name, js.position))
+        return [float(named[j]) for j in JOINTS]
 
     try:
         # ---------------- system checks
@@ -242,27 +300,38 @@ def main():
         if not all(ok for _, ok, _ in checks):
             raise RuntimeError('System check failed; nothing planned or executed')
 
+        # ---------------- pen orientation = the one in the taught drawing pose
+        # Every target gets exactly the TCP orientation of --drawing-pose (pen down,
+        # flange towards the base), so the wrist never has to turn while drawing.
+        o = compute_fk(node, drawing_pose).orientation
+        pen_down = 1 - 2 * (o.x * o.x + o.y * o.y)      # world z of the TCP z axis
+        if pen_down > -0.99:
+            raise RuntimeError('The pen does not point down in --drawing-pose; choose another pose')
+        for stroke in strokes:
+            for pz in stroke['poses']:
+                if isinstance(pz, dict):
+                    pz['qx'], pz['qy'], pz['qz'], pz['qw'] = o.x, o.y, o.z, o.w
+                else:
+                    pz[3:7] = [o.x, o.y, o.z, o.w]
+        print(f'Pen orientation taken from --drawing-pose: q = ({o.x:.3f}, {o.y:.3f}, {o.z:.3f}, {o.w:.3f})')
+
         # ---------------- Phase 1: plan the whole chain
         log.info(f'PLANNING {len(strokes)} strokes (robot does not move)')
-        joints = None
+        joints = current_joints()
         if not args.no_home:
-            traj = plan_joints(HOME, None, 'home')
-            plan.append(('home', traj))
-            joints = end_joints(traj, HOME)
+            traj = joint_line(joints, home, 'to home')
+            plan.append(('to home', traj))
+            joints = list(home)
+        traj = joint_line(joints, drawing_pose, 'to drawing pose')
+        plan.append(('to drawing pose', traj))
+        joints = list(drawing_pose)
 
         dz = args.z_offset
         first_up = to_pose(strokes[0]['poses'][0], dz + args.lift)
-        # Free (OMPL) motion to a pen-down pose above stroke 1. IK is seeded from home,
-        # so the arm stays in a home-like configuration. A straight Cartesian line is
-        # used only as a fallback, since the wrist must turn about 90 degrees here.
-        q_up = compute_ik(node, first_up, joints or HOME)
-        if q_up is not None:
-            traj = plan_joints(q_up, joints, 'approach')
-        else:
-            log.warn('No IK solution near home for the first pen-up pose; trying a straight line')
-            traj = plan_cartesian([first_up], joints, 'approach')
+        # Straight line for the pen tip from the drawing pose to above stroke 1.
+        traj = plan_cartesian([first_up], joints, 'approach')
         plan.append(('approach', traj))
-        joints = end_joints(traj, joints or HOME)
+        joints = end_joints(traj, joints)
 
         preview, last_up = [], first_up
         for i, stroke in enumerate(strokes, 1):
@@ -282,8 +351,11 @@ def main():
         traj = plan_cartesian([shifted(last_up, args.home_lift)], joints, 'lift')
         plan.append(('lift', traj))
         joints = end_joints(traj, joints)
-        traj = plan_joints(HOME, joints, 'return home')
-        plan.append(('return home', traj))
+        traj = joint_line(joints, drawing_pose, 'back to drawing pose')
+        plan.append(('back to drawing pose', traj))
+        if not args.no_home:
+            traj = joint_line(drawing_pose, home, 'back to home')
+            plan.append(('back to home', traj))
 
         # ---------------- Phase 2: show the plan
         disp = DisplayTrajectory()

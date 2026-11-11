@@ -44,6 +44,19 @@ bilde -> image_to_targets -> /tmp/mas248_targets.json -> run_picture_real.py -> 
 
 `run_picture_real.py` planlegger **hele** tegningen først. Feiler én del, kjøres ingenting.
 
+Bevegelsen er **forutsigbar**, det brukes ingen tilfeldig planlegger (OMPL):
+
+```
+nåværende stilling -> hjem -> tegnestilling -> ned til strøket -> tegne -> opp -> tegnestilling -> hjem
+```
+
+| Del | Hvordan |
+|---|---|
+| Til/fra hjem og tegnestilling | Rett linje i leddrommet (alle ledd samtidig), kollisjonssjekket |
+| Ned, tegne, opp | Rette linjer for tusjtuppen (kartesisk) |
+
+Med samme mål og samme startstilling blir banen lik hver gang.
+
 ---
 
 ## 2. Engangsoppsett på lab-PC-en
@@ -118,6 +131,30 @@ Modellen må stemme med den ekte cellen. Feil mål gir feil tusjhøyde.
 | Bordflate | z = 0 (sokkelen står på bordet) | `table_link` |
 
 Etter endringer: bygg med `--cmake-force-configure` (se 2.3).
+
+### Hjem og tegnestilling
+
+| Stilling | Base, Shoulder, Elbow, Wrist 1, Wrist 2, Wrist 3 (grader) | Rolle |
+|---|---|---|
+| `--home` | 0,7 / −90 / −90 / −90 / 90 / −180 | Armen rett opp. Start og slutt |
+| `--drawing-pose` | 24,2 / −156,6 / −72,5 / −130,9 / 101,6 / −180 | Over arket, tusjen ned, flensen mot basen |
+
+Tegnestillingen bestemmer armformen og tusjens orientering under hele tegningen.
+Den er valgt slik at basen bare vrir seg 24° fra hjem, albuen er bøyd, og håndleddet
+(Wrist 2 ≈ 100°) er langt unna singularitet.
+
+**Ny tegnestilling** (hvis arket flyttes): stopp programmet, før roboten til ønsket stilling
+med pendanten (tusjen rett ned, ca. 15 cm over arket), les av vinklene med
+`ros2 topic echo /joint_states --once`, og gi dem i radianer i rekkefølgen
+pan, lift, elbow, wrist1, wrist2, wrist3:
+
+```bash
+--drawing-pose "0.422,-2.734,-1.265,-2.285,1.774,-3.142"
+```
+
+> Programmet avslutter alltid i hjem-stillingen. Står roboten et helt annet sted når
+> programmet starter, blir første bevegelse (`to home`) lang. Se på tiden i SUMMARY,
+> og la veileder flytte roboten hjem med pendanten hvis den står langt unna.
 
 ### Arkets plassering
 
@@ -258,14 +295,14 @@ Sett `--min-z` ut fra målt bordhøyde, så nekter skriptet punkter under bordet
 - [ ] Veileder er til stede og har godkjent
 - [ ] Arbeidsområdet er tomt, nødstopp innen rekkevidde
 - [ ] Preflight passert, blå tegning på riktig sted
-- [ ] Hastighetsglideren på pendanten satt lavt (10 til 20 %)
+- [ ] Hastighetsglideren på pendanten satt til **50 % eller mer** (se seksjon 10 om lavere fart)
 
 **Steg 1: i lufta, med bekreftelse før hver bevegelse** (`--tcp-offset-mm 30` fra seksjon 6):
 
 ```bash
 PYTHONPATH="$HOME/mas248_ws/src/mas248_ur5e_demos:$PYTHONPATH" \
 python3 src/mas248_ur5e_real/scripts/run_picture_real.py \
-  --targets /tmp/mas248_targets.json --min-z -0.005 --lift 0.15 --speed 0.5 \
+  --targets /tmp/mas248_targets.json --min-z -0.005 --lift 0.15 \
   --execute --acknowledge-hardware --acknowledge-clearance
 ```
 
@@ -283,20 +320,27 @@ Faktisk TCP-bane lagres i `/tmp/mas248_tcp_trace_real.csv` (til resultatdelen i 
 
 | Valg | Standard | Betydning |
 |---|---|---|
-| `--targets` | `/tmp/mas248_l10_targets_lower.json` | Målfil fra `image_to_targets` |
+| `--targets` | `/tmp/mas248_l10_targets_lower.json` | Målfil fra `image_to_targets` (bruk `/tmp/mas248_targets.json`) |
+| `--home` | armen rett opp | Start- og sluttstilling [rad] |
+| `--drawing-pose` | over arket, flens mot basen | Fast mellomstopp, gir armform og tusjorientering [rad] |
 | `--lift` | 0.05 | Pen-opp-høyde over tegningen [m]. **Bruk 0.15** i denne cellen |
-| `--home-lift` | 0.15 | Løft før planlegging hjem [m] |
+| `--home-lift` | 0.15 | Løft rett opp etter siste strøk [m] |
 | `--z-offset` | 0 | Løfter alle mål [m] |
-| `--tool-yaw-deg` | −90 | Roterer tusjen rundt egen akse, holder håndleddet unna singularitet |
 | `--min-z` | ikke satt | Nekter mål under denne høyden [m] |
 | `--max-radius` | 0.80 | Nekter mål lenger unna sokkelen [m] |
-| `--speed` | 0.5 | Ekstra nedskalering av farten (0 til 1) |
+| `--speed` | **0.5** | Ekstra nedskalering av farten (0 til 1). Høyere verdier ga feil i testene |
 | `--max-strokes` | 0 (alle) | Tegn bare de første N strøkene |
-| `--no-home` | av | Start fra nåværende stilling i stedet for hjem |
+| `--no-home` | av | Hopp over hjem, gå rett fra nåværende stilling til tegnestillingen |
 | `--execute` | av | Beveg roboten (krever de to under) |
 | `--acknowledge-hardware` | av | Bekrefter at dette er ekte robot |
 | `--acknowledge-clearance` | av | Bekrefter tomt arbeidsområde og nødstopp |
 | `--no-confirm` | av | Ikke spør før hver bevegelse (ikke ved første kjøringer) |
+
+Tusjens orientering hentes automatisk fra `--drawing-pose`. Det finnes ingen
+leddrestriksjoner i skriptet; kollisjonssjekken mot modellen (sokkel, bord, roboten selv)
+gjelder alltid.
+
+Faktisk fart = MoveIt-skalering (10 %) × `--speed` × hastighetsglideren på pendanten.
 
 ---
 
@@ -310,12 +354,16 @@ Faktisk TCP-bane lagres i `/tmp/mas248_tcp_trace_real.csv` (til resultatdelen i 
 | `[FAIL] External Control program running` | Programmet kjører ikke | Play på pendanten **etter** at driveren er startet |
 | `[FAIL] scaled_joint_trajectory_controller: no answer` | Controller manager svarte tregt | Kjør på nytt |
 | Robot beveger seg ikke | Feil Host IP/port, brannmur | Sjekk External Control (192.168.1.102, 50002) og `ufw` |
-| `approach: only X% planned` / `MoveItErrorCodes=99999` på approach | Trangt område nær bord og sokkel | Bruk `--lift 0.15` (eller høyere) |
-| `No IK solution near home` | Punktet kan ikke nås med tusjen ned | Sjekk `--center-x/y` (fortegn, se seksjon 3) |
-| Svært store håndleddsbevegelser, lang strøktid | Håndledd-singularitet | `--tool-yaw-deg -90` (standard) eller `90` |
+| `approach: only X% planned` | Trangt område nær bord og sokkel | Bruk `--lift 0.15` (eller høyere) |
+| `straight joint path is in collision` | Veien mellom to stillinger går gjennom sokkel eller bord | Flytt roboten nærmere hjem med pendanten, eller velg en annen `--drawing-pose` |
+| `The pen does not point down in --drawing-pose` | Tegnestillingen har feil orientering | Lær inn en ny tegnestilling (seksjon 3) |
+| Lange strøk, store håndleddsbevegelser | Tegnestillingen er nær håndledd-singularitet (Wrist 2 nær 0° eller 180°) | Lær inn en tegnestilling med Wrist 2 nær ±90° |
+| `to home` tar svært lang tid | Roboten står langt fra hjem, eller et ledd står 360° feil | Flytt roboten hjem med pendanten først |
+| `robot is ... rad from the planned start` | Roboten står ikke der planen starter (protective stop, program stoppet) | Sjekk pendanten, Play på nytt |
 | `MoveItErrorCodes=-2` i første planlegging | Robot står i ugyldig stilling etter avbrudd | Flytt roboten til en trygg stilling med pendanten (veileder), Play på nytt |
-| `Trajectory execution failed error -4` | Kontrolleren avbrøt, ofte protective stop | Les meldingen på pendanten, fjern årsaken, Play på nytt, start lavt |
-| `error -6` (TIMED_OUT) | Bevegelsen tok lenger tid enn ventet | Sjekk pendanten, kjør på nytt med lavere fart |
+| `Trajectory execution failed error -4` | Kontrolleren avbrøt, ofte protective stop, eller for høy `--speed` | Les meldingen på pendanten, Play på nytt, bruk `--speed 0.5` |
+| `error -6` (TIMED_OUT) | Glideren under ca. 50 %: MoveIt tillater bare 2 × planlagt tid + 1 s | Glideren ≥ 50 %, eller øk `allowed_execution_duration_scaling` i `launch/moveit_real.launch.py` (f.eks. 10.0) og start MoveIt på nytt |
+| Feil −4/−6 uten grunn, `Moved backwards in time` | Klokkehopp (WSL etter dvale) | Gjelder ikke lab-PC med vanlig Ubuntu. I WSL: `wsl --shutdown` og start på nytt |
 
 ### Protective stop og nødstopp
 
