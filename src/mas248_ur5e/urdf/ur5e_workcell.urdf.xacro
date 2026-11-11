@@ -22,13 +22,13 @@
   <!-- Pedestal 0.30 x 0.30 x 0.70 m, frame on the floor -->
   <link name="pedestal_link">
     <visual>
-      <origin xyz="0 0 0.35" rpy="0 0 0"/>
-      <geometry><box size="0.30 0.30 0.70"/></geometry>
+      <origin xyz="0 0 0.155" rpy="0 0 0"/>
+      <geometry><box size="0.30 0.30 0.31"/></geometry>
       <material name="pedestal_grey"><color rgba="0.55 0.55 0.58 1.0"/></material>
     </visual>
     <collision>
-      <origin xyz="0 0 0.35" rpy="0 0 0"/>
-      <geometry><box size="0.30 0.30 0.70"/></geometry>
+      <origin xyz="0 0 0.155" rpy="0 0 0"/>
+      <geometry><box size="0.30 0.30 0.31"/></geometry>
     </collision>
   </link>
 
@@ -55,7 +55,7 @@
   <joint name="spindle_to_tcp" type="fixed">
     <parent link="spindle_body"/>
     <child link="tcp"/>
-    <origin xyz="0 0 0.20" rpy="0 0 0"/>
+    <origin xyz="0 0.065 0.10" rpy="-1.5708 0 0"/>
   </joint>
 
   <joint name="world_to_pedestal" type="fixed">
@@ -88,19 +88,19 @@
     output_recipe_filename=""
   >
     <!-- Mount the robot on top of the pedestal use right dimensions-->
-    <origin xyz="0 0 0.70" rpy="0 0 0"/>
+    <origin xyz="0 0 0.31" rpy="0 0 0"/>
   </xacro:ur_robot>
 
   <!-- Simple work table FOR FUN and LEARNING-->
   <link name="table_link">
     <visual>
-      <origin xyz="0.85 0 0.40" rpy="0 0 0"/>
-      <geometry><box size="1.20 0.80 0.05"/></geometry>
+      <origin xyz="0 0 -0.026" rpy="0 0 0"/>
+      <geometry><box size="2.0 2.0 0.05"/></geometry>
       <material name="table"><color rgba="0.75 0.75 0.78 1.0"/></material>
     </visual>
     <collision>
-      <origin xyz="0.85 0 0.40" rpy="0 0 0"/>
-      <geometry><box size="1.20 0.80 0.05"/></geometry>
+      <origin xyz="0 0 -0.026" rpy="0 0 0"/>
+      <geometry><box size="2.0 2.0 0.05"/></geometry>
     </collision>
   </link>
   <joint name="world_to_table" type="fixed">

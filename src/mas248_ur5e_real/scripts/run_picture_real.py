@@ -29,6 +29,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from std_msgs.msg import Bool
 from sensor_msgs.msg import JointState
 from visualization_msgs.msg import Marker
@@ -44,9 +45,13 @@ REAL_CONTROLLER = 'scaled_joint_trajectory_controller'
 
 
 # ---------------------------------------------------------------- system checks
-def wait_for_message(node, msg_type, topic, timeout=3.0):
+LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                     reliability=ReliabilityPolicy.RELIABLE)
+
+
+def wait_for_message(node, msg_type, topic, timeout=3.0, qos=10):
     box = []
-    sub = node.create_subscription(msg_type, topic, lambda m: box.append(m), 10)
+    sub = node.create_subscription(msg_type, topic, lambda m: box.append(m), qos)
     end = time.time() + timeout
     while not box and time.time() < end:
         rclpy.spin_once(node, timeout_sec=0.1)
@@ -54,7 +59,7 @@ def wait_for_message(node, msg_type, topic, timeout=3.0):
     return box[0] if box else None
 
 
-def controller_state(node, name, timeout=5.0):
+def controller_state(node, name, timeout=15.0):
     try:
         from controller_manager_msgs.srv import ListControllers
     except ImportError:
@@ -86,11 +91,41 @@ def system_checks(node, need_execution):
                        'available' if ex else 'launch MoveIt with enable_execution:=true'))
         state = controller_state(node, REAL_CONTROLLER)
         checks.append((REAL_CONTROLLER, state == 'active', state))
-        prog = wait_for_message(node, Bool, '/io_and_status_controller/robot_program_running')
+        # Published only when it changes, with transient-local QoS (latched).
+        prog = wait_for_message(node, Bool, '/io_and_status_controller/robot_program_running', qos=LATCHED)
         running = prog is not None and prog.data
         checks.append(('External Control program running', running,
                        'true' if running else 'press Play on the pendant AFTER the driver runs'))
     return checks
+
+
+# ---------------------------------------------------------------- IK seeded from home
+def compute_ik(node, pose, seed, timeout=10.0):
+    """Ask MoveIt for joint angles that put the TCP at 'pose', starting the search
+    from 'seed'. Returns six joint values or None. Seeding from home keeps the arm
+    in a home-like configuration instead of a random IK branch."""
+    from moveit_msgs.srv import GetPositionIK
+    from builtin_interfaces.msg import Duration
+    cli = node.create_client(GetPositionIK, '/compute_ik')
+    if not cli.wait_for_service(timeout_sec=timeout):
+        return None
+    req = GetPositionIK.Request()
+    ik = req.ik_request
+    ik.group_name = 'manipulator'
+    ik.ik_link_name = 'tcp'
+    ik.avoid_collisions = True
+    ik.pose_stamped.header.frame_id = 'world'
+    ik.pose_stamped.pose = pose
+    ik.robot_state.joint_state.name = list(JOINTS)
+    ik.robot_state.joint_state.position = [float(v) for v in seed]
+    ik.timeout = Duration(sec=1)
+    fut = cli.call_async(req)
+    rclpy.spin_until_future_complete(node, fut, timeout_sec=timeout)
+    res = fut.result() if fut.done() else None
+    if res is None or res.error_code.val != 1:
+        return None
+    named = dict(zip(res.solution.joint_state.name, res.solution.joint_state.position))
+    return [float(named[j]) for j in JOINTS]
 
 
 # ---------------------------------------------------------------- target checks
@@ -113,6 +148,8 @@ def main():
     ap.add_argument('--targets', default='/tmp/mas248_l10_targets_lower.json', help='target JSON')
     ap.add_argument('--lift', type=float, default=0.05, help='pen-up height above the drawing [m]')
     ap.add_argument('--home-lift', type=float, default=0.15, help='lift before planning to home [m]')
+    ap.add_argument('--tool-yaw-deg', type=float, default=-90.0,
+                    help='rotate the pen about its own axis; avoids the wrist singularity [deg]')
     ap.add_argument('--z-offset', type=float, default=0.0, help='raise all targets by this much [m]')
     ap.add_argument('--min-z', type=float, default=None,
                     help='refuse targets below this world z [m]; set it from the measured table height')
@@ -145,6 +182,25 @@ def main():
         strokes = strokes[:args.max_strokes]
     if not strokes:
         sys.exit('No strokes in target file')
+
+    # Rotate every target about the TCP's own Z axis (the pen axis). The pen tip and
+    # the drawing are unchanged, but the flange no longer lines up with wrist_1,
+    # which keeps the wrist away from its singularity.
+    if args.tool_yaw_deg:
+        h = math.radians(args.tool_yaw_deg) / 2.0
+        bz, bw = math.sin(h), math.cos(h)
+        for stroke in strokes:
+            for p in stroke['poses']:
+                if isinstance(p, dict):
+                    x, y, z, w = p['qx'], p['qy'], p['qz'], p['qw']
+                else:
+                    x, y, z, w = p[3], p[4], p[5], p[6]
+                q = (x * bw + y * bz, y * bw - x * bz, z * bw + w * bz, w * bw - z * bz)
+                if isinstance(p, dict):
+                    p['qx'], p['qy'], p['qz'], p['qw'] = q
+                else:
+                    p[3:7] = list(q)
+        print(f'Pen rotated {args.tool_yaw_deg:.0f} deg about its own axis (wrist singularity guard)')
 
     lowest, widest, problems = target_checks(strokes, args.z_offset, args.min_z, args.max_radius)
     print(f'Targets: {len(strokes)} strokes, lowest z = {lowest:.3f} m, widest reach = {widest:.3f} m')
@@ -196,7 +252,15 @@ def main():
 
         dz = args.z_offset
         first_up = to_pose(strokes[0]['poses'][0], dz + args.lift)
-        traj = plan_cartesian([first_up], joints, 'approach')
+        # Free (OMPL) motion to a pen-down pose above stroke 1. IK is seeded from home,
+        # so the arm stays in a home-like configuration. A straight Cartesian line is
+        # used only as a fallback, since the wrist must turn about 90 degrees here.
+        q_up = compute_ik(node, first_up, joints or HOME)
+        if q_up is not None:
+            traj = plan_joints(q_up, joints, 'approach')
+        else:
+            log.warn('No IK solution near home for the first pen-up pose; trying a straight line')
+            traj = plan_cartesian([first_up], joints, 'approach')
         plan.append(('approach', traj))
         joints = end_joints(traj, joints or HOME)
 
