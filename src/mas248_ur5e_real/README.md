@@ -156,6 +156,42 @@ pan, lift, elbow, wrist1, wrist2, wrist3:
 > programmet starter, blir første bevegelse (`to home`) lang. Se på tiden i SUMMARY,
 > og la veileder flytte roboten hjem med pendanten hvis den står langt unna.
 
+### Hvis tegningen havner på feil side
+
+**Sjekk (kun planlegging, roboten beveger seg ikke):** start driver og MoveIt (seksjon 4)
+og kjør preflight (seksjon 7).
+
+1. Står roboten i RViz i **samme** stilling som den ekte roboten? Hvis **nei**, er det ikke
+   retningen som er feil, men modellen eller kalibreringen. Stopp og spør veileder.
+2. Ligger den **blå planlagte tegningen** i RViz på samme side av sokkelen som arket
+   ligger i virkeligheten? Hvis **ja**, er alt riktig.
+3. Ligger den på **motsatt** side, er arkets koordinater målt i pendantens `base`-ramme
+   (rotert 180°). Gjør da begge endringene under.
+
+**a) Snu fortegnet på arkets midtpunkt** i `image_to_targets`:
+
+```bash
+--center-x 0.45 --center-y 0.10
+```
+
+**b) Drei basen 180° (+π rad) i både hjem- og tegnestillingen** i `run_picture_real.py`.
+Armformen, tusjretningen og flensen mot basen blir den samme, bare på andre siden:
+
+```bash
+--home "3.154,-1.572,-1.571,-1.571,1.571,-3.142" \
+--drawing-pose "3.564,-2.734,-1.265,-2.285,1.774,-3.142"
+```
+
+Bare første tallet (basen) er endret: 0,012 → 3,154 og 0,422 → 3,564.
+Tusjens orientering følger tegnestillingen automatisk, så ingenting annet må endres.
+
+Kjør preflight på nytt og sjekk at den blå tegningen nå ligger over arket.
+Står roboten i den gamle hjem-stillingen, blir første bevegelse (`to home`) en 180°-dreining
+av basen. La veileder flytte roboten til den nye hjem-stillingen med pendanten først.
+
+> Ligger arket et helt annet sted (ikke bare speilet), lær inn en ny tegnestilling over
+> arket (se over) og mål midtpunktet med `tf2_echo world tcp`.
+
 ### Arkets plassering
 
 Beste metode er å la roboten måle den (gjøres av veileder):
@@ -186,13 +222,23 @@ Rekkefølgen er viktig: **driver, så Play på pendanten, så MoveIt.**
 3. Last programmet med **External Control**-noden. **Local mode.**
 4. **Ikke trykk Play ennå.**
 
+> **To moduser.** Kommandoene under er forelesningens, med `enable_execution:=false`:
+> **kun planlegging**, roboten kan ikke beveges. Det er standard for studenter.
+> Skal roboten kjøres (seksjon 8, kun med veileder), startes **både** driver og MoveIt
+> på nytt med `enable_execution:=true`.
+
 ### 4.2 Terminal 1: driver
 
 ```bash
+source /opt/ros/humble/setup.bash
+source ~/mas248_ws/install/setup.bash
+export ROS_DOMAIN_ID=48
 ros2 launch mas248_ur5e_real driver.launch.py \
-  robot_ip:=192.168.1.101 reverse_ip:=192.168.1.102 \
+  robot_ip:=192.168.1.101 \
+  reverse_ip:=192.168.1.102 \
   calibration:="$HOME/ur5e_calibration.yaml" \
-  enable_execution:=true acknowledge_hardware:=yes
+  enable_execution:=false \
+  acknowledge_hardware:=yes
 ```
 
 Vent til `Calibration checked successfully` og `Configured and activated scaled_joint_trajectory_controller`.
@@ -208,9 +254,15 @@ Robot connected to reverse interface. Ready to receive control commands.
 ### 4.4 Terminal 2: MoveIt og RViz
 
 ```bash
+source /opt/ros/humble/setup.bash
+source ~/mas248_ws/install/setup.bash
+export ROS_DOMAIN_ID=48
 ros2 launch mas248_ur5e_real moveit_real.launch.py \
-  robot_ip:=192.168.1.101 reverse_ip:=192.168.1.102 \
-  calibration:="$HOME/ur5e_calibration.yaml" enable_execution:=true
+  robot_ip:=192.168.1.101 \
+  reverse_ip:=192.168.1.102 \
+  calibration:="$HOME/ur5e_calibration.yaml" \
+  enable_execution:=false \
+  launch_rviz:=true
 ```
 
 I RViz:
@@ -218,7 +270,8 @@ I RViz:
 - **Add → Marker**, Topic `/mas248/tcp_trace` (oransje: det roboten faktisk tegnet)
 - Sjekk at roboten i RViz står i **samme stilling** som den ekte roboten.
 
-> Kun planlegging uten mulighet for bevegelse: start både driver og MoveIt med `enable_execution:=false`.
+> Med `enable_execution:=false` virker preflight (seksjon 7), men `--execute` stopper på systemsjekken
+> (`MoveIt /execute_trajectory` eller `scaled_joint_trajectory_controller` feiler). Det er meningen.
 
 ---
 
@@ -293,6 +346,7 @@ Sett `--min-z` ut fra målt bordhøyde, så nekter skriptet punkter under bordet
 
 **Før:**
 - [ ] Veileder er til stede og har godkjent
+- [ ] Driver og MoveIt startet på nytt med `enable_execution:=true` (seksjon 4)
 - [ ] Arbeidsområdet er tomt, nødstopp innen rekkevidde
 - [ ] Preflight passert, blå tegning på riktig sted
 - [ ] Hastighetsglideren på pendanten satt til **50 % eller mer** (se seksjon 10 om lavere fart)
