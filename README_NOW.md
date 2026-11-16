@@ -1,15 +1,3 @@
-Feilsøking
-Gjør 2.5 på 3 terminaler
-
-Skjekk at ip adresse er 10 på pc og robot
-
-Gjør steg 4 til 8
-
-Trykk på play på robot skjermen etter steg 4.2
-
-
-
-
 # MAS248: Tegning med ekte UR5e (lab-PC)
 
 Manual for å kjøre tegneprogrammet på lab-PC-en som er koblet til robotarmen.
