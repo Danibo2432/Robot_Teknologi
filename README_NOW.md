@@ -1,3 +1,15 @@
+Feilsøking
+Gjør 2.5 på 3 terminaler
+
+Skjekk at ip adresse er 10 på pc og robot
+
+Gjør steg 4 til 8
+
+Trykk på play på robot skjermen etter steg 4.2
+
+
+
+
 # MAS248: Tegning med ekte UR5e (lab-PC)
 
 Manual for å kjøre tegneprogrammet på lab-PC-en som er koblet til robotarmen.
@@ -98,16 +110,20 @@ source install/setup.bash
 
 | | IP |
 |---|---|
-| UR5e | `192.168.1.101` |
-| Lab-PC | `192.168.1.102` (nettmaske `255.255.255.0`) |
+| UR5e | `192.168.10.101` |
+| Lab-PC | `192.168.10.102` (nettmaske `255.255.255.0`) |
 
 ```bash
-ping -c 3 192.168.1.101
+ping -c 3 192.168.10.101
 sudo ufw allow 50001:50004/tcp
-for p in 29999 30001 30002 30004; do nc -zv -w 2 192.168.1.101 $p; done
+for p in 29999 30001 30002 30004; do nc -zv -w 2 192.168.10.101 $p; done
 ```
 
 Ikke slå av brannmuren helt, åpne bare portene over.
+
+> Sjekk med `ip -4 addr` at det kablede kortet (`eno1`) har `192.168.10.102/24`. PC og robot må være på
+> samme subnett. Med feil subnett henger driveren på `Initializing driver...` og gir etter ca. 2 min
+> `Failed to connect to robot`.
 
 ### 2.5 I hver ny terminal
 
@@ -136,8 +152,19 @@ Etter endringer: bygg med `--cmake-force-configure` (se 2.3).
 
 | Stilling | Base, Shoulder, Elbow, Wrist 1, Wrist 2, Wrist 3 (grader) | Rolle |
 |---|---|---|
-| `--home` | 0,7 / −90 / −90 / −90 / 90 / −180 | Armen rett opp. Start og slutt |
-| `--drawing-pose` | 24,2 / −156,6 / −72,5 / −130,9 / 101,6 / −180 | Over arket, tusjen ned, flensen mot basen |
+| `--home` | 180,7 / −90 / −90 / −90 / 90 / −180 | Armen rett opp. Start og slutt |
+| `--drawing-pose` | 204,2 / −156,6 / −72,5 / −130,9 / 101,6 / −180 | Over arket, tusjen ned, flensen mot basen |
+
+I radianer (brukes i alle kommandoer i seksjon 7 og 8):
+
+```bash
+--home "3.154,-1.572,-1.571,-1.571,1.571,-3.142" \
+--drawing-pose "3.564,-2.734,-1.265,-2.285,1.774,-3.142"
+```
+
+> Arket ligger på **positiv** x og y i `world`. Skriptets innebygde standardverdier er for motsatt
+> side, så `--home` og `--drawing-pose` over **må** være med. Uten dem feiler preflight med
+> `approach: only X% planned`.
 
 Tegnestillingen bestemmer armformen og tusjens orientering under hele tegningen.
 Den er valgt slik at basen bare vrir seg 24° fra hjem, albuen er bøyd, og håndleddet
@@ -149,7 +176,7 @@ med pendanten (tusjen rett ned, ca. 15 cm over arket), les av vinklene med
 pan, lift, elbow, wrist1, wrist2, wrist3:
 
 ```bash
---drawing-pose "0.422,-2.734,-1.265,-2.285,1.774,-3.142"
+--drawing-pose "3.564,-2.734,-1.265,-2.285,1.774,-3.142"
 ```
 
 > Programmet avslutter alltid i hjem-stillingen. Står roboten et helt annet sted når
@@ -166,28 +193,17 @@ og kjør preflight (seksjon 7).
 2. Ligger den **blå planlagte tegningen** i RViz på samme side av sokkelen som arket
    ligger i virkeligheten? Hvis **ja**, er alt riktig.
 3. Ligger den på **motsatt** side, er arkets koordinater målt i pendantens `base`-ramme
-   (rotert 180°). Gjør da begge endringene under.
-
-**a) Snu fortegnet på arkets midtpunkt** i `image_to_targets`:
-
-```bash
---center-x 0.45 --center-y 0.10
-```
-
-**b) Drei basen 180° (+π rad) i både hjem- og tegnestillingen** i `run_picture_real.py`.
-Armformen, tusjretningen og flensen mot basen blir den samme, bare på andre siden:
+   (rotert 180°). Snu da fortegnet på `--center-x/y` **og** bruk tegnestilling og hjem for
+   den andre siden (base-leddet 180° mindre):
 
 ```bash
---home "3.154,-1.572,-1.571,-1.571,1.571,-3.142" \
---drawing-pose "3.564,-2.734,-1.265,-2.285,1.774,-3.142"
+--home "0.012,-1.572,-1.571,-1.571,1.571,-3.142" \
+--drawing-pose "0.422,-2.734,-1.265,-2.285,1.774,-3.142"
 ```
 
-Bare første tallet (basen) er endret: 0,012 → 3,154 og 0,422 → 3,564.
-Tusjens orientering følger tegnestillingen automatisk, så ingenting annet må endres.
-
-Kjør preflight på nytt og sjekk at den blå tegningen nå ligger over arket.
-Står roboten i den gamle hjem-stillingen, blir første bevegelse (`to home`) en 180°-dreining
-av basen. La veileder flytte roboten til den nye hjem-stillingen med pendanten først.
+Midtpunktet og tegnestillingen må alltid ligge på **samme** side. Står roboten i hjem-stillingen
+for den andre siden, blir første bevegelse (`to home`) en 180°-dreining av basen. La veileder
+flytte roboten til riktig hjem-stilling med pendanten først.
 
 > Ligger arket et helt annet sted (ikke bare speilet), lær inn en ny tegnestilling over
 > arket (se over) og mål midtpunktet med `tf2_echo world tcp`.
@@ -204,7 +220,7 @@ Beste metode er å la roboten måle den (gjøres av veileder):
    ```
 4. `Translation: [x, y, z]` gir `--center-x`, `--center-y` og `--center-z` i seksjon 6.
 
-Foreløpig estimat: senter **(−0,45, −0,10, 0,0)** m i `world`.
+Brukt i labben: senter **(0,45, 0,10, 0,0)** m i `world`.
 
 > **Merk:** pendanten viser posisjoner i rammen `base`, som er rotert 180° i forhold til ROS sin
 > `world`/`base_link`. Positiv X og Y på pendanten er negativ X og Y i ROS.
@@ -218,7 +234,7 @@ Rekkefølgen er viktig: **driver, så Play på pendanten, så MoveIt.**
 ### 4.1 Pendanten (forberedelse)
 
 1. Roboten slått på og i **Normal** (grønn).
-2. **Installation → URCaps → External Control**: Host IP `192.168.1.102`, port `50002`.
+2. **Installation → URCaps → External Control**: Host IP `192.168.10.102`, port `50002`.
 3. Last programmet med **External Control**-noden. **Local mode.**
 4. **Ikke trykk Play ennå.**
 
@@ -234,10 +250,10 @@ source /opt/ros/humble/setup.bash
 source ~/mas248_ws/install/setup.bash
 export ROS_DOMAIN_ID=48
 ros2 launch mas248_ur5e_real driver.launch.py \
-  robot_ip:=192.168.1.101 \
-  reverse_ip:=192.168.1.102 \
+  robot_ip:=192.168.10.101 \
+  reverse_ip:=192.168.10.102 \
   calibration:="$HOME/ur5e_calibration.yaml" \
-  enable_execution:=false \
+  enable_execution:=true \
   acknowledge_hardware:=yes
 ```
 
@@ -258,10 +274,10 @@ source /opt/ros/humble/setup.bash
 source ~/mas248_ws/install/setup.bash
 export ROS_DOMAIN_ID=48
 ros2 launch mas248_ur5e_real moveit_real.launch.py \
-  robot_ip:=192.168.1.101 \
-  reverse_ip:=192.168.1.102 \
+  robot_ip:=192.168.10.101 \
+  reverse_ip:=192.168.10.102 \
   calibration:="$HOME/ur5e_calibration.yaml" \
-  enable_execution:=false \
+  enable_execution:=true \
   launch_rviz:=true
 ```
 
@@ -285,9 +301,14 @@ ros2 topic echo /io_and_status_controller/robot_program_running --once
 ```
 
 Forventet:
-- `scaled_joint_trajectory_controller ... active`
-- `joint_state_broadcaster ... active`
-- `data: true`
+
+| | `enable_execution:=false` (kun planlegging) | `enable_execution:=true` (kjøring, veileder) |
+|---|---|---|
+| `joint_state_broadcaster` | `active` | `active` |
+| `scaled_joint_trajectory_controller` | `inactive` (riktig, roboten kan ikke beveges) | `active` |
+| `robot_program_running` | `data: true` | `data: true` |
+
+Står kontrolleren `inactive` med `enable_execution:=true`, ikke aktiver den manuelt. Ta det med veileder.
 
 `run_picture_real.py` gjør de samme sjekkene automatisk før kjøring.
 
@@ -297,20 +318,23 @@ Forventet:
 
 Bildet legges i `src/mas248_ur5e_demos/images/` (svart strek på hvit bakgrunn, helst PNG).
 
-**Første test** (lite, 4 cm, 1 kontur, tusjen 3 cm over arket):
+**Første test** (8 cm, 1 kontur, tusjen 3 cm over arket):
 
 ```bash
 ros2 run mas248_ur5e_demos image_to_targets \
-  ~/mas248_ws/src/mas248_ur5e_demos/images/pumpkin_outline.jpg \
-  --width-m 0.04 --center-x -0.45 --center-y -0.10 --center-z 0.0 \
-  --tcp-offset-mm 30 --max-contours 1 --max-points 20
+  ~/mas248_ws/src/mas248_ur5e_demos/images/spiderman.png \
+  --width-m 0.08 --center-x 0.45 --center-y 0.10 --center-z 0.0 \
+  --tcp-offset-mm 40 --max-contours 8 --max-points 20
 ```
+
+> **Merk:** `--tcp-offset-mm` er endret fra 30 til 40 mm. Under presentasjonen lå tusjtuppen
+> 1 cm for lavt. Det påvirket ikke resultatet, men verdien er rettet.
 
 | Valg | Betydning |
 |---|---|
-| `--width-m` | Tegningens bredde i meter |
+| `--width-m` | Tegningens bredde i **meter** (0.08 = 8 cm, 0.8 = 80 cm) |
 | `--center-x/y/z` | Arkets midtpunkt i `world` (seksjon 3) |
-| `--tcp-offset-mm` | Tusjens høyde over arket. **30** = tegner i lufta. **0** = treffer papiret |
+| `--tcp-offset-mm` | Tusjens høyde over arket. **40** = tegner i lufta. Ca. **10** = treffer papiret (tuppen ligger 1 cm lavere enn modellen) |
 | `--max-contours` | Antall omriss |
 | `--max-points` | Punkter per omriss (oppløsning) |
 
@@ -325,7 +349,9 @@ Roboten beveger seg **ikke**.
 ```bash
 PYTHONPATH="$HOME/mas248_ws/src/mas248_ur5e_demos:$PYTHONPATH" \
 python3 src/mas248_ur5e_real/scripts/run_picture_real.py \
-  --targets /tmp/mas248_targets.json --min-z -0.005 --lift 0.15
+  --targets /tmp/mas248_targets.json --min-z -0.005 --lift 0.15 \
+  --home "3.154,-1.572,-1.571,-1.571,1.571,-3.142" \
+  --drawing-pose "3.564,-2.734,-1.265,-2.285,1.774,-3.142"
 ```
 
 Forventet utskrift:
@@ -338,6 +364,7 @@ Preflight check passed!
 ```
 
 Sjekk i RViz at den **blå tegningen** ligger der arket faktisk ligger.
+Se også på `to home` i SUMMARY: er den lang (over ca. 15 s), står roboten langt fra hjem.
 Sett `--min-z` ut fra målt bordhøyde, så nekter skriptet punkter under bordet.
 
 ---
@@ -351,18 +378,22 @@ Sett `--min-z` ut fra målt bordhøyde, så nekter skriptet punkter under bordet
 - [ ] Preflight passert, blå tegning på riktig sted
 - [ ] Hastighetsglideren på pendanten satt til **50 % eller mer** (se seksjon 10 om lavere fart)
 
-**Steg 1: i lufta, med bekreftelse før hver bevegelse** (`--tcp-offset-mm 30` fra seksjon 6):
+**Steg 1: i lufta** (`--tcp-offset-mm 40` fra seksjon 6):
 
 ```bash
 PYTHONPATH="$HOME/mas248_ws/src/mas248_ur5e_demos:$PYTHONPATH" \
 python3 src/mas248_ur5e_real/scripts/run_picture_real.py \
   --targets /tmp/mas248_targets.json --min-z -0.005 --lift 0.15 \
-  --execute --acknowledge-hardware --acknowledge-clearance
+  --home "3.154,-1.572,-1.571,-1.571,1.571,-3.142" \
+  --drawing-pose "3.564,-2.734,-1.265,-2.285,1.774,-3.142" \
+  --execute --acknowledge-hardware --acknowledge-clearance \
+  --no-confirm
 ```
 
 Trykk Enter for hver bevegelse, `q` + Enter for å stoppe.
+For første kjøring kan `--max-strokes 1` legges til, så tegnes bare første strøk.
 
-**Steg 2:** ser alt riktig ut, lag nye mål med lavere `--tcp-offset-mm` (f.eks. 5, så 1, så 0) og kjør igjen.
+**Steg 2:** ser alt riktig ut, lag nye mål med lavere `--tcp-offset-mm` (f.eks. 20, så 12, så 10) og kjør igjen. Ved ca. 10 mm treffer tusjen papiret.
 
 **Steg 3:** større bilde (`--width-m 0.18 --max-contours 10 --max-points 150`), først preflight, så kjøring.
 
@@ -375,11 +406,11 @@ Faktisk TCP-bane lagres i `/tmp/mas248_tcp_trace_real.csv` (til resultatdelen i 
 | Valg | Standard | Betydning |
 |---|---|---|
 | `--targets` | `/tmp/mas248_l10_targets_lower.json` | Målfil fra `image_to_targets` (bruk `/tmp/mas248_targets.json`) |
-| `--home` | armen rett opp | Start- og sluttstilling [rad] |
-| `--drawing-pose` | over arket, flens mot basen | Fast mellomstopp, gir armform og tusjorientering [rad] |
+| `--home` | armen rett opp, negativ side | Start- og sluttstilling [rad]. **Bruk verdien i seksjon 3** |
+| `--drawing-pose` | negativ side | Fast mellomstopp, gir armform og tusjorientering [rad]. **Bruk verdien i seksjon 3** |
 | `--lift` | 0.05 | Pen-opp-høyde over tegningen [m]. **Bruk 0.15** i denne cellen |
 | `--home-lift` | 0.15 | Løft rett opp etter siste strøk [m] |
-| `--z-offset` | 0 | Løfter alle mål [m] |
+| `--z-offset` | 0 | Løfter alle mål [m]. Høyde = `--tcp-offset-mm` + `--z-offset` |
 | `--min-z` | ikke satt | Nekter mål under denne høyden [m] |
 | `--max-radius` | 0.80 | Nekter mål lenger unna sokkelen [m] |
 | `--speed` | **0.5** | Ekstra nedskalering av farten (0 til 1). Høyere verdier ga feil i testene |
@@ -402,13 +433,15 @@ Faktisk fart = MoveIt-skalering (10 %) × `--speed` × hastighetsglideren på pe
 
 | Symptom | Årsak | Løsning |
 |---|---|---|
+| Driver henger på `Initializing driver...`, `Failed to connect to robot` | PC og robot på forskjellig subnett, eller feil `robot_ip` | `ip -4 addr` og `ping`, se 2.4 |
+| `[FAIL] scaled_joint_trajectory_controller: inactive` | Driver/MoveIt startet med `enable_execution:=false` | Riktig i planleggingsmodus. For kjøring: start på nytt med `true` (seksjon 4) |
 | Driver: `launch configuration '...' does not exist` | Kommentar med `$(var ...)` i `config/ur_controllers.yaml` | Fjern `$(var ...)` fra kommentaren, bygg på nytt |
 | Driver: `Generated L10 workcell missing` | Pakken ikke konfigurert | Bygg med `--cmake-force-configure` |
 | Endringer i modellen vises ikke | Gammel generert beskrivelse | Bygg `mas248_ur5e_real` med `--cmake-force-configure`, start driver og MoveIt på nytt |
 | `[FAIL] External Control program running` | Programmet kjører ikke | Play på pendanten **etter** at driveren er startet |
 | `[FAIL] scaled_joint_trajectory_controller: no answer` | Controller manager svarte tregt | Kjør på nytt |
-| Robot beveger seg ikke | Feil Host IP/port, brannmur | Sjekk External Control (192.168.1.102, 50002) og `ufw` |
-| `approach: only X% planned` | Trangt område nær bord og sokkel | Bruk `--lift 0.15` (eller høyere) |
+| Robot beveger seg ikke | Feil Host IP/port, brannmur | Sjekk External Control (192.168.10.102, 50002) og `ufw` |
+| `approach: only X% planned` | Tegnestillingen er på motsatt side av arket, eller trangt nær bord og sokkel | Sjekk at `--home`/`--drawing-pose` og `--center-x/y` er på samme side (seksjon 3). Bruk `--lift 0.15` |
 | `straight joint path is in collision` | Veien mellom to stillinger går gjennom sokkel eller bord | Flytt roboten nærmere hjem med pendanten, eller velg en annen `--drawing-pose` |
 | `The pen does not point down in --drawing-pose` | Tegnestillingen har feil orientering | Lær inn en ny tegnestilling (seksjon 3) |
 | Lange strøk, store håndleddsbevegelser | Tegnestillingen er nær håndledd-singularitet (Wrist 2 nær 0° eller 180°) | Lær inn en tegnestilling med Wrist 2 nær ±90° |
